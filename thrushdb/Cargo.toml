@@ -1,0 +1,16 @@
+[package]
+name = "thrushdb"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+memmap2 = "0.9"
+
+# The Network Layer
+tokio = { version = "1.37", features = ["full"] }
+
+# Serialization (JSON handling)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+[dev-dependencies]
+rand = "0.8"

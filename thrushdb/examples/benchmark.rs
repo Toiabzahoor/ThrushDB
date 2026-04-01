@@ -1,70 +1,69 @@
-// examples/benchmark.rs
-
-use rand::Rng;
-use std::fs;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write, Seek, SeekFrom};
 use std::time::Instant;
-use thrushdb::{ThrushDB, U1024};
 
-fn generate_random_u1024<R: Rng>(rng: &mut R) -> U1024 {
-    let mut data = [0u64; 16];
-    for w in &mut data {
-        *w = rng.r#gen();
-    }
-    U1024(data)
-}
+const FILE_SIZE_MB: usize = 512; // adjust if needed
+const BLOCK_SIZE: usize = 4 * 1024; // 4 KB
+const FILE_NAME: &str = "bench.dat";
 
 fn main() {
-    let path = "data/benchmark_thrushdb.bin";
-    let _ = fs::remove_file(path); // Start fresh
+    println!("Starting I/O benchmark...");
 
-    let arena_size = 1_000_000;
-    let num_searches = 1_000;
-    
-    println!("🚀 Starting ThrushDB Benchmark...");
-    println!("Initializing memory-mapped arena (Capacity: 1,000,000 vectors)...");
-    
-    let mut db = ThrushDB::new_at(path, arena_size).unwrap();
-    let mut rng = rand::thread_rng();
+    let total_bytes = FILE_SIZE_MB * 1024 * 1024;
+    let buffer = vec![0u8; BLOCK_SIZE];
 
-    // --- PHASE 1: INSERTION ---
-    println!("Inserting 1,000,000 random vectors...");
-    let start_insert = Instant::now();
-    
-    let mut successful_inserts = 0;
-    for i in 0..arena_size {
-        let vec = generate_random_u1024(&mut rng);
-        if db.insert(vec, i as u64).is_ok() {
-            successful_inserts += 1;
-        }
+    // ------------------------
+    // Sequential Write
+    // ------------------------
+    let mut file = File::create(FILE_NAME).expect("create failed");
+    let start = Instant::now();
+
+    for _ in 0..(total_bytes / BLOCK_SIZE) {
+        file.write_all(&buffer).unwrap();
     }
-    
-    let insert_duration = start_insert.elapsed();
-    println!("✅ Inserted {} vectors in {:.2?}", successful_inserts, insert_duration);
+    file.sync_all().unwrap();
 
-    // --- PHASE 2: SEARCHING ---
-    println!("\nGenerating {} random queries...", num_searches);
-    let mut queries = Vec::with_capacity(num_searches);
-    for _ in 0..num_searches {
-        queries.push(generate_random_u1024(&mut rng));
+    let elapsed = start.elapsed().as_secs_f64();
+    let mbps = FILE_SIZE_MB as f64 / elapsed;
+
+    println!("Sequential Write: {:.2} MB/s", mbps);
+
+    // ------------------------
+    // Sequential Read
+    // ------------------------
+    let mut file = File::open(FILE_NAME).unwrap();
+    let mut read_buf = vec![0u8; BLOCK_SIZE];
+
+    let start = Instant::now();
+
+    for _ in 0..(total_bytes / BLOCK_SIZE) {
+        file.read_exact(&mut read_buf).unwrap();
     }
 
-    println!("Executing {} Top-5 searches...", num_searches);
-    let start_search = Instant::now();
-    
-    for query in &queries {
-        let _results = db.search(*query, 5);
+    let elapsed = start.elapsed().as_secs_f64();
+    let mbps = FILE_SIZE_MB as f64 / elapsed;
+
+    println!("Sequential Read: {:.2} MB/s", mbps);
+
+    // ------------------------
+    // Random Read
+    // ------------------------
+    let mut file = OpenOptions::new().read(true).open(FILE_NAME).unwrap();
+
+    let iterations = total_bytes / BLOCK_SIZE;
+    let start = Instant::now();
+
+    for i in 0..iterations {
+        let offset = ((i * 7919) % iterations) * BLOCK_SIZE; // pseudo-random
+        file.seek(SeekFrom::Start(offset as u64)).unwrap();
+        file.read_exact(&mut read_buf).unwrap();
     }
-    
-    let search_duration = start_search.elapsed();
-    let avg_search_us = search_duration.as_micros() as f64 / num_searches as f64;
 
-    println!("✅ Completed {} searches in {:.2?}", num_searches, search_duration);
-    println!("\n🔥 PERFORMANCE METRICS 🔥");
-    println!("--------------------------------------");
-    println!("Average Latency per Search: {:.2} µs (microseconds)", avg_search_us);
-    println!("Searches per Second (QPS):  {:.0}", 1_000_000.0 / avg_search_us);
-    println!("--------------------------------------");
+    let elapsed = start.elapsed().as_secs_f64();
+    let iops = iterations as f64 / elapsed;
 
-    // Cleanup
-    let _ = fs::remove_file(path);
+    println!("Random Read: {:.0} IOPS", iops);
+
+    // cleanup
+    std::fs::remove_file(FILE_NAME).ok();
 }
