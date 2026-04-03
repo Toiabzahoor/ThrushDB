@@ -1,4 +1,4 @@
-#ThrushDB
+ThrushDB
 ThrushDB is a fast, memory-mapped vector database built from scratch in Rust, featuring a two-level Locality Sensitive Hashing (LSH) engine and a custom binary TCP protocol. I threw this together over 2 days to experiment with high-throughput vector storage and retrieval.
 
 Currently, it takes high-dimensional float vectors, quantizes them down to 1024-bit binary signatures (U1024) via sign-bit quantization, and routes them through a memory-mapped chunk architecture.
